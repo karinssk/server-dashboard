@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Server, Globe, Cloud, Code, Settings, LogOut } from 'lucide-react';
+import { LayoutDashboard, Server, Globe, Cloud, Code, Settings, LogOut, Folder } from 'lucide-react';
 
 const menuItems = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -11,6 +11,7 @@ const menuItems = [
     { name: 'Nginx', href: '/nginx', icon: Server },
     { name: 'Apache', href: '/apache', icon: Globe },
     { name: 'Cloudflared', href: '/cloudflared', icon: Cloud },
+    { name: 'File Manager', href: '/files', icon: Folder },
 ];
 
 export default function Sidebar() {
