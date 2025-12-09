@@ -35,6 +35,10 @@ export async function GET() {
     }
 }
 
+import { exec } from 'child_process';
+
+const execAsync = util.promisify(exec);
+
 export async function POST(request: Request) {
     try {
         const { config } = await request.json();
@@ -43,14 +47,64 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Missing config data' }, { status: 400 });
         }
 
-        const yamlStr = yaml.dump(config);
+        // 1. Read existing config to compare
+        let oldConfig: any = {};
+        try {
+            const oldContent = await readFile(CONFIG_PATH, 'utf-8');
+            oldConfig = yaml.load(oldContent);
+        } catch (e) {
+            // Config might not exist yet
+        }
 
-        // Attempt to write. This might fail if permissions are not set.
-        // In a real scenario, we might need a privileged helper or sudo.
-        // For now, we assume the user has made the file writable or we are running as root.
+        // 2. Identify new hostnames
+        const oldHostnames = new Set<string>();
+        if (oldConfig.ingress) {
+            oldConfig.ingress.forEach((rule: any) => {
+                if (rule.hostname) oldHostnames.add(rule.hostname);
+            });
+        }
+
+        const newHostnames: string[] = [];
+        if (config.ingress) {
+            config.ingress.forEach((rule: any) => {
+                if (rule.hostname && !oldHostnames.has(rule.hostname)) {
+                    newHostnames.push(rule.hostname);
+                }
+            });
+        }
+
+        // 3. Save the new config first
+        const yamlStr = yaml.dump(config);
         await writeFile(CONFIG_PATH, yamlStr, 'utf-8');
 
-        return NextResponse.json({ success: true, message: 'Config saved successfully' });
+        // 4. Execute DNS routing for new hostnames
+        const tunnelId = config.tunnel || oldConfig.tunnel;
+        const results: string[] = [];
+
+        if (tunnelId && newHostnames.length > 0) {
+            console.log(`Found ${newHostnames.length} new hostnames to route for tunnel ${tunnelId}`);
+
+            for (const hostname of newHostnames) {
+                try {
+                    // Command: cloudflared tunnel route dns <UUID> <hostname>
+                    // Note: This requires cloudflared to be authenticated and have permissions
+                    const command = `cloudflared tunnel route dns ${tunnelId} ${hostname}`;
+                    console.log(`Executing: ${command}`);
+
+                    await execAsync(command);
+                    results.push(`Routed DNS for ${hostname}`);
+                } catch (error: any) {
+                    console.error(`Failed to route DNS for ${hostname}:`, error);
+                    results.push(`Failed to route DNS for ${hostname}: ${error.message}`);
+                }
+            }
+        }
+
+        return NextResponse.json({
+            success: true,
+            message: 'Config saved successfully',
+            dnsResults: results
+        });
 
     } catch (error: any) {
         console.error('Cloudflared Config Write Error:', error);

@@ -1,9 +1,10 @@
 'use client';
 
 import useSWR, { mutate } from 'swr';
-import { Cloud, Activity, FileText, AlertTriangle, Network, Plus, Edit2, Trash2, Save, X } from 'lucide-react';
+import { Cloud, Activity, FileText, AlertTriangle, Network, Plus, Edit2, Trash2, Save, X, RotateCw, Terminal } from 'lucide-react';
 import { useState } from 'react';
 import Swal from 'sweetalert2';
+import CloudflaredLogViewer from '../components/CloudflaredLogViewer';
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -45,6 +46,8 @@ export default function CloudflaredPage() {
     const [editIndex, setEditIndex] = useState<number | null>(null);
     const [editHostname, setEditHostname] = useState('');
     const [editService, setEditService] = useState('');
+    const [restarting, setRestarting] = useState(false);
+    const [showLogs, setShowLogs] = useState(false);
 
     const handleSaveConfig = async (newConfig: CloudflaredConfig) => {
         try {
@@ -54,15 +57,47 @@ export default function CloudflaredPage() {
                 body: JSON.stringify({ config: newConfig }),
             });
 
-            if (!res.ok) throw new Error('Failed to save config');
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to save config');
 
             Toast.fire({ icon: 'success', title: 'Configuration saved successfully' });
+
+            if (data.dnsResults && data.dnsResults.length > 0) {
+                Swal.fire({
+                    title: 'DNS Routing Results',
+                    html: `<ul class="text-left text-sm text-gray-300 list-disc pl-5">${data.dnsResults.map((r: string) => `<li>${r}</li>`).join('')}</ul>`,
+                    icon: 'info',
+                    background: '#1f2937',
+                    color: '#fff'
+                });
+            }
+
             mutate('/api/cloudflared/config');
             setIsEditing(false);
             setEditIndex(null);
         } catch (err: any) {
             console.error(err);
             Toast.fire({ icon: 'error', title: 'Failed to save configuration', text: err.message });
+        }
+    };
+
+    const handleRestart = async () => {
+        setRestarting(true);
+        try {
+            const res = await fetch('/api/cloudflared/action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'restart' }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to restart');
+
+            Toast.fire({ icon: 'success', title: 'Cloudflared restarted successfully' });
+            mutate('/api/cloudflared/status');
+        } catch (error: any) {
+            Toast.fire({ icon: 'error', title: 'Failed to restart Cloudflared', text: error.message });
+        } finally {
+            setRestarting(false);
         }
     };
 
@@ -148,12 +183,30 @@ export default function CloudflaredPage() {
     }
 
     return (
-        <div className="p-8 max-w-7xl mx-auto">
-            <header className="mb-8">
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-orange-500 to-amber-500 bg-clip-text text-transparent flex items-center gap-3">
-                    <Cloud className="text-orange-500" /> Cloudflared Manager
-                </h1>
-                <p className="text-gray-400 mt-2">Tunnel Status & Configuration</p>
+        <div className="p-8 max-w-7xl mx-auto relative">
+            <header className="mb-8 flex justify-between items-center">
+                <div>
+                    <h1 className="text-3xl font-bold bg-gradient-to-r from-orange-500 to-amber-500 bg-clip-text text-transparent flex items-center gap-3">
+                        <Cloud className="text-orange-500" /> Cloudflared Manager
+                    </h1>
+                    <p className="text-gray-400 mt-2">Tunnel Status & Configuration</p>
+                </div>
+                <div className="flex gap-3">
+                    <button
+                        onClick={() => setShowLogs(true)}
+                        className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                    >
+                        <Terminal size={16} /> View Logs
+                    </button>
+                    <button
+                        onClick={handleRestart}
+                        disabled={restarting}
+                        className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50"
+                    >
+                        <RotateCw size={16} className={restarting ? "animate-spin" : ""} />
+                        {restarting ? 'Restarting...' : 'Restart Service'}
+                    </button>
+                </div>
             </header>
 
             {/* Status Cards */}
@@ -319,6 +372,15 @@ export default function CloudflaredPage() {
                                 <Save size={18} /> Save
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Cloudflared Log Viewer */}
+            {showLogs && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="w-full max-w-5xl h-[80vh]">
+                        <CloudflaredLogViewer onClose={() => setShowLogs(false)} />
                     </div>
                 </div>
             )}

@@ -15,8 +15,10 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
         }
 
-        // Using brew services to restart
-        await execAsync('brew services restart nginx');
+        const isLinux = process.platform === 'linux';
+        const command = isLinux ? 'sudo systemctl restart nginx' : 'brew services restart nginx';
+
+        await execAsync(command);
 
         return NextResponse.json({ success: true, message: 'Nginx restarted successfully' });
 

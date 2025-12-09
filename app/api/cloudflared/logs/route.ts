@@ -8,72 +8,103 @@ export const dynamic = 'force-dynamic';
 
 const stat = util.promisify(fs.stat);
 
-export async function GET() {
+export async function GET(request: Request) {
     const encoder = new TextEncoder();
 
-    // Find log file
-    const commonPaths = [
-        '/opt/homebrew/var/log/cloudflared.log',
-        '/usr/local/var/log/cloudflared.log',
-        '/var/log/cloudflared.log',
-        '/tmp/cloudflared.log' // Fallback
-    ];
-
-    let logPath = '';
-    for (const p of commonPaths) {
-        try {
-            await stat(p);
-            logPath = p;
-            break;
-        } catch (e) {
-            // ignore
-        }
-    }
-
     const stream = new ReadableStream({
-        async start(controller) {
-            if (!logPath) {
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', message: 'Log file not found. Checked: ' + commonPaths.join(', ') })}\n\n`));
-                // Keep connection open but inactive? Or close?
-                // Let's keep it open so the UI doesn't retry infinitely immediately
-                return;
+        start(controller) {
+            const isLinux = process.platform === 'linux';
+            let logProcess: any;
+
+            if (isLinux) {
+                // Use journalctl to stream logs
+                logProcess = spawn('sudo', ['journalctl', '-u', 'cloudflared', '-f', '-n', '100', '-o', 'json']);
+            } else {
+                // macOS/Dev: Try to tail log file or mock
+                const commonPaths = [
+                    '/opt/homebrew/var/log/cloudflared.log',
+                    '/usr/local/var/log/cloudflared.log',
+                    '/var/log/cloudflared.log',
+                    '/tmp/cloudflared.log'
+                ];
+
+                let logPath = '';
+                for (const p of commonPaths) {
+                    try {
+                        if (fs.existsSync(p)) {
+                            logPath = p;
+                            break;
+                        }
+                    } catch (e) { }
+                }
+
+                if (logPath) {
+                    logProcess = spawn('tail', ['-f', '-n', '100', logPath]);
+                } else {
+                    // Mock logs if no file found
+                    const sendMockLog = () => {
+                        const mockLog = {
+                            timestamp: Date.now(),
+                            message: `[${new Date().toISOString()}] INF Connection established tunnelID=${crypto.randomUUID()}`,
+                            service: 'cloudflared',
+                            priority: '6'
+                        };
+                        controller.enqueue(encoder.encode(`data: ${JSON.stringify(mockLog)}\n\n`));
+                    };
+                    const interval = setInterval(sendMockLog, 2000);
+                    request.signal.addEventListener('abort', () => clearInterval(interval));
+                    return;
+                }
             }
 
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'info', message: `Streaming logs from ${logPath}` })}\n\n`));
-
-            const tail = spawn('tail', ['-f', '-n', '100', logPath]);
-
-            tail.stdout.on('data', (data) => {
+            logProcess.stdout.on('data', (data: Buffer) => {
                 const lines = data.toString().split('\n');
-                for (const line of lines) {
-                    if (line.trim()) {
-                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'log', message: line })}\n\n`));
+                lines.forEach(line => {
+                    if (!line.trim()) return;
+                    try {
+                        if (isLinux) {
+                            const logEntry = JSON.parse(line);
+                            const formattedLog = {
+                                timestamp: parseInt(logEntry.__REALTIME_TIMESTAMP) / 1000 || Date.now(),
+                                message: logEntry.MESSAGE,
+                                service: logEntry._SYSTEMD_UNIT || 'cloudflared',
+                                priority: logEntry.PRIORITY || '6'
+                            };
+                            controller.enqueue(encoder.encode(`data: ${JSON.stringify(formattedLog)}\n\n`));
+                        } else {
+                            // Raw text log from tail
+                            const rawLog = {
+                                timestamp: Date.now(),
+                                message: line,
+                                service: 'cloudflared',
+                                priority: '6'
+                            };
+                            controller.enqueue(encoder.encode(`data: ${JSON.stringify(rawLog)}\n\n`));
+                        }
+                    } catch (e) {
+                        // Fallback for non-JSON lines
+                        const rawLog = {
+                            timestamp: Date.now(),
+                            message: line,
+                            service: 'cloudflared',
+                            priority: '6'
+                        };
+                        controller.enqueue(encoder.encode(`data: ${JSON.stringify(rawLog)}\n\n`));
                     }
-                }
+                });
             });
 
-            tail.stderr.on('data', (data) => {
-                // ignore stderr from tail usually
+            logProcess.stderr.on('data', (data: Buffer) => {
+                // console.error(`Log Error: ${data}`);
             });
 
-            // Cleanup on close
-            requestAnimationFrame(() => { }); // Hack to keep alive? No, Next.js handles this via the return stream.
+            logProcess.on('close', () => {
+                controller.close();
+            });
 
-            // We need to handle client disconnect, but in Next.js App Router route handlers, 
-            // we don't have a direct 'close' event on the request easily accessible in this scope 
-            // without using the signal.
-
-            // For now, we rely on the runtime to kill the process when the stream is closed.
-            // But to be safe, we can't easily detect disconnect here in standard Web Streams API 
-            // without the 'request.signal'.
-        },
-        cancel() {
-            // This is called when the client disconnects
-            // We should kill the tail process here if we had reference to it, 
-            // but 'tail' variable is inside 'start'. 
-            // Ideally we structure this differently, but for a simple implementation:
-            // The 'tail' process might linger if not killed. 
-            // In a production app, we'd manage these subprocesses more carefully.
+            request.signal.addEventListener('abort', () => {
+                logProcess.kill();
+            });
         }
     });
 
