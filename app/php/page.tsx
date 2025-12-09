@@ -1,7 +1,7 @@
 'use client';
 
 import useSWR, { mutate } from 'swr';
-import { Code, FileText, Terminal, Package, Search, Play, Square, RotateCw, Server } from 'lucide-react';
+import { Code, FileText, Terminal, Package, Search, Play, Square, RotateCw, Server, Settings, X } from 'lucide-react';
 import { useState } from 'react';
 import Swal from 'sweetalert2';
 
@@ -36,6 +36,12 @@ interface PHPService {
     name: string;
     status: string;
     user: string;
+    version: string;
+}
+
+interface PHPConfig {
+    path: string;
+    config: Record<string, string>;
 }
 
 export default function PHPPage() {
@@ -43,6 +49,8 @@ export default function PHPPage() {
     const { data: services, error: servicesError } = useSWR<PHPService[]>('/api/php/services', fetcher, { refreshInterval: 5000 });
     const [searchTerm, setSearchTerm] = useState('');
     const [loadingAction, setLoadingAction] = useState<string | null>(null);
+    const [selectedConfig, setSelectedConfig] = useState<PHPConfig | null>(null);
+    const [loadingConfig, setLoadingConfig] = useState(false);
 
     const handleAction = async (service: string, action: 'start' | 'stop' | 'restart') => {
         setLoadingAction(`${service}-${action}`);
@@ -81,6 +89,23 @@ export default function PHPPage() {
         }
     };
 
+    const handleViewConfig = async (version: string) => {
+        setLoadingConfig(true);
+        try {
+            const res = await fetch(`/api/php/config?version=${version}`);
+            if (!res.ok) throw new Error('Failed to fetch config');
+            const data = await res.json();
+            setSelectedConfig(data);
+        } catch (error) {
+            Toast.fire({
+                icon: 'error',
+                title: 'Failed to load configuration'
+            });
+        } finally {
+            setLoadingConfig(false);
+        }
+    };
+
     if (infoError) return <div className="p-8 text-red-500">Failed to load PHP info.</div>;
     if (!phpInfo) return <div className="p-8 text-gray-400 animate-pulse">Loading PHP environment...</div>;
 
@@ -89,7 +114,7 @@ export default function PHPPage() {
     );
 
     return (
-        <div className="p-8 max-w-7xl mx-auto">
+        <div className="p-8 max-w-7xl mx-auto relative">
             <header className="mb-8">
                 <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-500 bg-clip-text text-transparent flex items-center gap-3">
                     <Code className="text-purple-400" /> PHP Manager
@@ -117,6 +142,7 @@ export default function PHPPage() {
                             <thead className="bg-gray-950 text-gray-400 text-xs uppercase">
                                 <tr>
                                     <th className="px-6 py-4 font-medium">Service Name</th>
+                                    <th className="px-6 py-4 font-medium">Version</th>
                                     <th className="px-6 py-4 font-medium">Status</th>
                                     <th className="px-6 py-4 font-medium">User</th>
                                     <th className="px-6 py-4 font-medium text-right">Actions</th>
@@ -126,6 +152,7 @@ export default function PHPPage() {
                                 {Array.isArray(services) && services.map((service) => (
                                     <tr key={service.name} className="hover:bg-gray-800/50 transition-colors">
                                         <td className="px-6 py-4 font-medium text-white">{service.name}</td>
+                                        <td className="px-6 py-4 text-gray-400">{service.version}</td>
                                         <td className="px-6 py-4">
                                             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${service.status === 'started'
                                                 ? 'bg-green-500/10 text-green-400 border border-green-500/20'
@@ -135,7 +162,14 @@ export default function PHPPage() {
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-gray-400">{service.user || '-'}</td>
-                                        <td className="px-6 py-4 text-right space-x-2">
+                                        <td className="px-6 py-4 text-right space-x-2 flex justify-end items-center">
+                                            <button
+                                                onClick={() => handleViewConfig(service.version)}
+                                                className="p-2 text-purple-400 hover:bg-purple-500/10 rounded-lg transition-colors mr-2"
+                                                title="View Config"
+                                            >
+                                                <Settings size={18} />
+                                            </button>
                                             {service.status !== 'started' && (
                                                 <button
                                                     onClick={() => handleAction(service.name, 'start')}
@@ -169,12 +203,12 @@ export default function PHPPage() {
                                 ))}
                                 {!services && (
                                     <tr>
-                                        <td colSpan={4} className="px-6 py-8 text-center text-gray-500">Loading services...</td>
+                                        <td colSpan={5} className="px-6 py-8 text-center text-gray-500">Loading services...</td>
                                     </tr>
                                 )}
                                 {services && services.length === 0 && (
                                     <tr>
-                                        <td colSpan={4} className="px-6 py-8 text-center text-gray-500">No PHP services found via Homebrew.</td>
+                                        <td colSpan={5} className="px-6 py-8 text-center text-gray-500">No PHP services found.</td>
                                     </tr>
                                 )}
                             </tbody>
@@ -276,6 +310,45 @@ export default function PHPPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Config Modal */}
+            {selectedConfig && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-gray-900 border border-gray-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+                        <div className="p-6 border-b border-gray-800 flex justify-between items-center">
+                            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                                <Settings className="text-purple-400" /> PHP Configuration
+                            </h3>
+                            <button
+                                onClick={() => setSelectedConfig(null)}
+                                className="text-gray-400 hover:text-white transition-colors"
+                            >
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <div className="p-6 overflow-y-auto">
+                            <div className="mb-4">
+                                <span className="text-gray-500 text-sm">Configuration File:</span>
+                                <code className="block mt-1 bg-gray-950 p-2 rounded text-sm text-gray-300 font-mono break-all">
+                                    {selectedConfig.path}
+                                </code>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {Object.entries(selectedConfig.config).map(([key, value]) => (
+                                    <div key={key} className="bg-gray-950 p-4 rounded-lg border border-gray-800">
+                                        <span className="text-gray-500 text-xs uppercase tracking-wider block mb-1">
+                                            {key.replace(/_/g, ' ')}
+                                        </span>
+                                        <span className="text-white font-mono font-medium">
+                                            {value}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

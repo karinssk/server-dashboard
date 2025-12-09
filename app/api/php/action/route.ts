@@ -22,10 +22,16 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Invalid service name' }, { status: 400 });
         }
 
-        // Execute brew services command
-        // Note: This might require sudo if the service was started as root, but usually brew services handles user-level services fine.
-        // If it fails due to permissions, the error will be caught.
-        await execAsync(`brew services ${action} ${service}`);
+        const isLinux = process.platform === 'linux';
+
+        if (isLinux) {
+            // Debian 12: Use systemctl (requires sudo)
+            // Note: The user running the Node.js process must have passwordless sudo for systemctl
+            await execAsync(`sudo systemctl ${action} ${service}`);
+        } else {
+            // macOS: Use brew services
+            await execAsync(`brew services ${action} ${service}`);
+        }
 
         return NextResponse.json({ success: true, message: `Service ${service} ${action}ed` });
     } catch (error: any) {
