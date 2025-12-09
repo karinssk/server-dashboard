@@ -2,8 +2,8 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Server, Globe, Cloud, Code, Settings } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { LayoutDashboard, Server, Globe, Cloud, Code, Settings, LogOut } from 'lucide-react';
 
 const menuItems = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -15,6 +15,21 @@ const menuItems = [
 
 export default function Sidebar() {
     const pathname = usePathname();
+    const router = useRouter();
+
+    if (pathname === '/login') {
+        return null;
+    }
+
+    const handleLogout = async () => {
+        try {
+            await fetch('/api/auth/logout', { method: 'POST' });
+            router.push('/login');
+            router.refresh();
+        } catch (error) {
+            console.error('Logout failed', error);
+        }
+    };
 
     return (
         <aside className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col h-screen sticky top-0">
@@ -34,8 +49,8 @@ export default function Sidebar() {
                             key={item.href}
                             href={item.href}
                             className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${isActive
-                                    ? 'bg-blue-600/10 text-blue-400 border border-blue-600/20'
-                                    : 'text-gray-400 hover:bg-gray-800 hover:text-gray-100'
+                                ? 'bg-blue-600/10 text-blue-400 border border-blue-600/20'
+                                : 'text-gray-400 hover:bg-gray-800 hover:text-gray-100'
                                 }`}
                         >
                             <Icon size={20} className={isActive ? 'text-blue-400' : 'text-gray-500 group-hover:text-gray-300'} />
@@ -45,10 +60,17 @@ export default function Sidebar() {
                 })}
             </nav>
 
-            <div className="p-4 border-t border-gray-800">
+            <div className="p-4 border-t border-gray-800 space-y-2">
                 <button className="flex items-center gap-3 px-4 py-3 w-full rounded-xl text-gray-400 hover:bg-gray-800 hover:text-gray-100 transition-all duration-200">
                     <Settings size={20} className="text-gray-500" />
                     <span className="font-medium">Settings</span>
+                </button>
+                <button
+                    onClick={handleLogout}
+                    className="flex items-center gap-3 px-4 py-3 w-full rounded-xl text-red-400 hover:bg-red-900/20 hover:text-red-300 transition-all duration-200"
+                >
+                    <LogOut size={20} className="text-red-500" />
+                    <span className="font-medium">Logout</span>
                 </button>
             </div>
         </aside>

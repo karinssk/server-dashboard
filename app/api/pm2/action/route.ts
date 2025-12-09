@@ -2,14 +2,14 @@
 import { NextResponse } from 'next/server';
 import pm2 from 'pm2';
 
-export async function POST(request: Request) {
+export async function POST(request: Request): Promise<NextResponse> {
     const { id, action } = await request.json();
 
     if (id === undefined || id === null) {
         return NextResponse.json({ error: 'Missing id' }, { status: 400 });
     }
 
-    return new Promise((resolve) => {
+    return new Promise<NextResponse>((resolve) => {
         pm2.connect((err) => {
             if (err) {
                 resolve(NextResponse.json({ error: err.message }, { status: 500 }));

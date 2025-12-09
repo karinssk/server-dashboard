@@ -4,8 +4,8 @@ import pm2 from 'pm2';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
-    return new Promise((resolve) => {
+export async function GET(): Promise<NextResponse> {
+    return new Promise<NextResponse>((resolve) => {
         pm2.connect((err) => {
             if (err) {
                 console.error('PM2 Connect Error:', err);

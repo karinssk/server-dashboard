@@ -82,7 +82,7 @@ export async function GET(request: Request) {
 
                         const processesToRead = list.filter((p) => {
                             if (targetId === 'all') return true;
-                            return p.pm_id == targetId;
+                            return String(p.pm_id) === targetId;
                         });
 
                         const maxLines = targetId === 'all' ? 15 : 50;
@@ -131,7 +131,7 @@ export async function GET(request: Request) {
                 }
 
                 const logHandler = (type: 'out' | 'err', packet: any) => {
-                    if (targetId && targetId !== 'all' && packet.process.pm_id != targetId) {
+                    if (targetId && targetId !== 'all' && String(packet.process.pm_id) !== targetId) {
                         return;
                     }
 

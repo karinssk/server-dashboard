@@ -1,5 +1,6 @@
+import 'dotenv/config';
 import pool from '../lib/db';
-import { hashPassword } from '../lib/auth';
+import { hashPassword } from '../lib/password';
 
 async function setup() {
     try {

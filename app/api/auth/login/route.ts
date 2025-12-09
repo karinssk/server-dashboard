@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
-import { verifyPassword, signToken } from '@/lib/auth';
+import { signToken } from '@/lib/auth';
+import { verifyPassword } from '@/lib/password';
 import { serialize } from 'cookie';
 
 export async function POST(request: Request) {
