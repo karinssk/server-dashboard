@@ -247,6 +247,8 @@ export default function FilesPage() {
         formData.append('file', file);
         formData.append('path', currentPath);
 
+        const xhr = new XMLHttpRequest();
+
         // Show progress modal
         let progressBar: HTMLElement | null = null;
         let progressText: HTMLElement | null = null;
@@ -260,16 +262,35 @@ export default function FilesPage() {
                 <div id="upload-progress-text" class="text-sm text-gray-400">0%</div>
             `,
             showConfirmButton: false,
+            showCancelButton: true,
+            cancelButtonText: 'Cancel',
+            cancelButtonColor: '#d33',
             allowOutsideClick: false,
             background: '#1f2937',
             color: '#fff',
             didOpen: () => {
                 progressBar = document.getElementById('upload-progress-bar');
                 progressText = document.getElementById('upload-progress-text');
+
+                const cancelButton = Swal.getCancelButton();
+                if (cancelButton) {
+                    cancelButton.onclick = () => {
+                        xhr.abort();
+                        Swal.fire({
+                            icon: 'info',
+                            title: 'Cancelled',
+                            text: 'Upload cancelled',
+                            timer: 1500,
+                            showConfirmButton: false,
+                            background: '#1f2937',
+                            color: '#fff'
+                        });
+                        if (fileInputRef.current) fileInputRef.current.value = '';
+                    };
+                }
             }
         });
 
-        const xhr = new XMLHttpRequest();
         xhr.open('POST', '/api/files/upload', true);
 
         xhr.upload.onprogress = (event) => {
@@ -305,6 +326,9 @@ export default function FilesPage() {
         };
 
         xhr.onerror = () => {
+            // Abort triggers onerror in some browsers/versions, so check if it was aborted?
+            // Actually abort usually triggers onabort. 
+            // But let's just handle generic network errors here.
             Swal.fire({
                 icon: 'error',
                 title: 'Error',
@@ -313,6 +337,10 @@ export default function FilesPage() {
                 color: '#fff'
             });
             if (fileInputRef.current) fileInputRef.current.value = '';
+        };
+
+        xhr.onabort = () => {
+            // Already handled in the cancel button click, but good to have safety
         };
 
         xhr.send(formData);

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Server, Globe, Cloud, Code, Settings, LogOut, Folder, Clock } from 'lucide-react';
+import { LayoutDashboard, Server, Globe, Cloud, Code, Settings, LogOut, Folder, Clock, Shield, Terminal } from 'lucide-react';
 
 const menuItems = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -12,6 +12,8 @@ const menuItems = [
     { name: 'Cloudflared', href: '/cloudflared', icon: Cloud },
     { name: 'File Manager', href: '/files', icon: Folder },
     { name: 'Cron Jobs', href: '/cron', icon: Clock },
+    { name: 'Firewall', href: '/firewall', icon: Shield },
+    { name: 'Terminal', href: '/terminal', icon: Terminal },
 ];
 
 export default function Sidebar() {
