@@ -5,7 +5,13 @@ import { Code, FileText, Terminal, Package, Search, Play, Square, RotateCw, Serv
 import { useState } from 'react';
 import Swal from 'sweetalert2';
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json());
+const fetcher = async (url: string) => {
+    const res = await fetch(url);
+    if (!res.ok) {
+        throw new Error('An error occurred while fetching the data.');
+    }
+    return res.json();
+};
 
 const Toast = Swal.mixin({
     toast: true,
@@ -117,13 +123,13 @@ export default function PHPPage() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-800">
-                                {services?.map((service) => (
+                                {Array.isArray(services) && services.map((service) => (
                                     <tr key={service.name} className="hover:bg-gray-800/50 transition-colors">
                                         <td className="px-6 py-4 font-medium text-white">{service.name}</td>
                                         <td className="px-6 py-4">
                                             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${service.status === 'started'
-                                                    ? 'bg-green-500/10 text-green-400 border border-green-500/20'
-                                                    : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                                                ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                                                : 'bg-red-500/10 text-red-400 border border-red-500/20'
                                                 }`}>
                                                 {service.status === 'started' ? 'Running' : 'Stopped'}
                                             </span>
