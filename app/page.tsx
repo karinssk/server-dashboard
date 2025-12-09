@@ -1,65 +1,247 @@
-import Image from "next/image";
 
-export default function Home() {
+'use client';
+
+import useSWR from 'swr';
+import { useState } from 'react';
+import { Play, Square, RotateCw, Activity, Cpu, HardDrive, Clock, User, Layers, FileText } from 'lucide-react';
+import Swal from 'sweetalert2';
+import MetricsDashboard from './components/MetricsDashboard';
+import LogViewer from './components/LogViewer';
+
+const Toast = Swal.mixin({
+  toast: true,
+  position: 'top-end',
+  showConfirmButton: false,
+  timer: 3000,
+  timerProgressBar: true,
+  didOpen: (toast) => {
+    toast.onmouseenter = Swal.stopTimer;
+    toast.onmouseleave = Swal.resumeTimer;
+  }
+});
+
+interface PM2Process {
+  id: number;
+  name: string;
+  namespace: string;
+  version: string;
+  mode: string;
+  pid: number;
+  uptime: number;
+  restarts: number;
+  status: string;
+  cpu: number;
+  mem: number;
+  user: string;
+  watching: string;
+}
+
+const fetcher = (url: string) => fetch(url).then((res) => res.json());
+
+export default function PM2Dashboard() {
+  const { data: processes, error, mutate } = useSWR<PM2Process[]>('/api/pm2/list', fetcher, {
+    refreshInterval: 3000,
+  });
+
+  const [loadingAction, setLoadingAction] = useState<number | null>(null);
+  const [selectedLogProcess, setSelectedLogProcess] = useState<number | 'all' | null>(null);
+
+  const handleAction = async (id: number, action: 'start' | 'stop' | 'restart') => {
+    setLoadingAction(id);
+    try {
+      const res = await fetch('/api/pm2/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, action }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || 'Failed');
+
+      Toast.fire({
+        icon: 'success',
+        title: `Process ${action}ed successfully`
+      });
+
+      mutate(); // Refresh data immediately
+    } catch (err: any) {
+      console.error('Action failed:', err);
+      Toast.fire({
+        icon: 'error',
+        title: `Failed to ${action} process`,
+        text: err.message
+      });
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const formatUptime = (timestamp: number) => {
+    const now = Date.now();
+    const diff = now - timestamp;
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) return `${days}d`;
+    if (hours > 0) return `${hours}h`;
+    if (minutes > 0) return `${minutes}m`;
+    return `${seconds}s`;
+  };
+
+  const formatMemory = (bytes: number) => {
+    return `${(bytes / 1024 / 1024).toFixed(1)}mb`;
+  };
+
+  if (error) return <div className="p-8 text-red-500">Failed to load PM2 data. Ensure the server is running.</div>;
+  if (!processes) return <div className="p-8 text-gray-400">Loading PM2 processes...</div>;
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <div className="min-h-screen bg-gray-950 text-gray-100 p-8 font-sans">
+      <div className="max-w-7xl mx-auto">
+        <header className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+              PM2 Dashboard
+            </h1>
+            <p className="text-gray-400 mt-2">Real-time process monitoring and control</p>
+          </div>
+          <div className="flex items-center gap-4 text-sm text-gray-400">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+              Live Updates
+            </div>
+            <div>Total Processes: {processes.length}</div>
+            <button
+              onClick={() => setSelectedLogProcess('all')}
+              className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 text-blue-400 rounded-lg hover:bg-blue-500/20 transition-colors text-xs font-medium border border-blue-500/20"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+              <FileText size={14} />
+              All Logs
+            </button>
+          </div>
+        </header>
+
+        <MetricsDashboard />
+
+        <div className="bg-gray-900 rounded-xl border border-gray-800 shadow-2xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-800/50 text-gray-400 text-xs uppercase tracking-wider">
+                  <th className="p-4 font-medium">ID</th>
+                  <th className="p-4 font-medium">Name</th>
+                  <th className="p-4 font-medium">PID</th>
+                  <th className="p-4 font-medium">Uptime</th>
+                  <th className="p-4 font-medium">Restarts</th>
+                  <th className="p-4 font-medium">Status</th>
+                  <th className="p-4 font-medium">CPU</th>
+                  <th className="p-4 font-medium">Mem</th>
+                  <th className="p-4 font-medium">User</th>
+                  <th className="p-4 font-medium text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800 text-sm">
+                {processes.map((proc) => (
+                  <tr key={proc.id} className="hover:bg-gray-800/30 transition-colors">
+                    <td className="p-4 font-mono text-gray-500">#{proc.id}</td>
+                    <td className="p-4 font-medium text-white">
+                      <div className="flex flex-col">
+                        <span>{proc.name}</span>
+                        <span className="text-xs text-gray-500">{proc.mode}</span>
+                      </div>
+                    </td>
+                    <td className="p-4 text-gray-400">{proc.pid}</td>
+                    <td className="p-4 text-gray-300">
+                      <div className="flex items-center gap-2">
+                        <Clock size={14} className="text-gray-500" />
+                        {formatUptime(proc.uptime)}
+                      </div>
+                    </td>
+                    <td className="p-4 text-gray-400">
+                      <div className="flex items-center gap-2">
+                        <RotateCw size={14} className="text-gray-500" />
+                        {proc.restarts}
+                      </div>
+                    </td>
+                    <td className="p-4">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${proc.status === 'online'
+                          ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                          : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                          }`}
+                      >
+                        {proc.status}
+                      </span>
+                    </td>
+                    <td className="p-4 text-gray-300">
+                      <div className="flex items-center gap-2">
+                        <Cpu size={14} className="text-gray-500" />
+                        {proc.cpu}%
+                      </div>
+                    </td>
+                    <td className="p-4 text-gray-300">
+                      <div className="flex items-center gap-2">
+                        <HardDrive size={14} className="text-gray-500" />
+                        {formatMemory(proc.mem)}
+                      </div>
+                    </td>
+                    <td className="p-4 text-gray-400">
+                      <div className="flex items-center gap-2">
+                        <User size={14} className="text-gray-500" />
+                        {proc.user}
+                      </div>
+                    </td>
+                    <td className="p-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => setSelectedLogProcess(proc.id)}
+                          className="p-2 rounded-lg bg-gray-800 text-gray-400 hover:bg-gray-700 transition-colors mr-2"
+                          title="View Logs"
+                        >
+                          <FileText size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleAction(proc.id, 'stop')}
+                          disabled={loadingAction === proc.id || proc.status !== 'online'}
+                          className="p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          title="Stop"
+                        >
+                          <Square size={16} fill="currentColor" />
+                        </button>
+                        <button
+                          onClick={() => handleAction(proc.id, 'restart')}
+                          disabled={loadingAction === proc.id}
+                          className="p-2 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          title="Restart"
+                        >
+                          <RotateCw size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleAction(proc.id, 'start')}
+                          disabled={loadingAction === proc.id || proc.status === 'online'}
+                          className="p-2 rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          title="Start"
+                        >
+                          <Play size={16} fill="currentColor" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+
+        {selectedLogProcess !== null && (
+          <LogViewer
+            processId={selectedLogProcess}
+            onClose={() => setSelectedLogProcess(null)}
+          />
+        )}
+      </div>
     </div>
   );
 }
