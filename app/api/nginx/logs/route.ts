@@ -1,60 +1,70 @@
-
 import { NextResponse } from 'next/server';
 import { spawn } from 'child_process';
-import fs from 'fs';
-import util from 'util';
 
 export const dynamic = 'force-dynamic';
 
-const stat = util.promisify(fs.stat);
-
-export async function GET() {
-    const encoder = new TextEncoder();
-
-    // Find log file (access.log)
-    const commonPaths = [
-        '/opt/homebrew/var/log/nginx/access.log',
-        '/usr/local/var/log/nginx/access.log',
-        '/var/log/nginx/access.log'
-    ];
-
-    let logPath = '';
-    for (const p of commonPaths) {
-        try {
-            await stat(p);
-            logPath = p;
-            break;
-        } catch (e) {
-            // ignore
-        }
-    }
-
+export async function GET(request: Request) {
     const stream = new ReadableStream({
-        async start(controller) {
-            if (!logPath) {
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', message: 'Log file not found. Checked: ' + commonPaths.join(', ') })}\n\n`));
-                return;
+        start(controller) {
+            const encoder = new TextEncoder();
+
+            const sendLog = (data: any) => {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+            };
+
+            const isLinux = process.platform === 'linux';
+            let journal: any;
+
+            if (isLinux) {
+                // Debian: Use journalctl for nginx unit
+                const args = ['--no-pager', '-f', '-n', '100', '-o', 'json', '-u', 'nginx'];
+                journal = spawn('journalctl', args);
+            } else {
+                // macOS: Mock logs
+                const interval = setInterval(() => {
+                    sendLog({
+                        timestamp: Date.now(),
+                        message: `[Mock Nginx] Access log entry ${new Date().toISOString()}`,
+                        service: 'nginx',
+                        priority: '6'
+                    });
+                }, 2000);
+                return () => clearInterval(interval);
             }
 
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'info', message: `Streaming logs from ${logPath}` })}\n\n`));
+            if (journal) {
+                journal.stdout.on('data', (data: Buffer) => {
+                    const lines = data.toString().split('\n');
+                    lines.forEach(line => {
+                        if (!line.trim()) return;
+                        try {
+                            const entry = JSON.parse(line);
+                            sendLog({
+                                timestamp: parseInt(entry.__REALTIME_TIMESTAMP) / 1000,
+                                message: entry.MESSAGE,
+                                service: 'nginx',
+                                priority: entry.PRIORITY
+                            });
+                        } catch (e) {
+                            sendLog({
+                                timestamp: Date.now(),
+                                message: line,
+                                service: 'nginx',
+                                priority: '6'
+                            });
+                        }
+                    });
+                });
 
-            const tail = spawn('tail', ['-f', '-n', '100', logPath]);
+                journal.stderr.on('data', (data: Buffer) => {
+                    console.error('Journalctl error:', data.toString());
+                });
 
-            tail.stdout.on('data', (data) => {
-                const lines = data.toString().split('\n');
-                for (const line of lines) {
-                    if (line.trim()) {
-                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'log', message: line })}\n\n`));
-                    }
-                }
-            });
-
-            tail.stderr.on('data', (data) => {
-                // ignore
-            });
-        },
-        cancel() {
-            // cleanup
+                journal.on('close', (code: number) => {
+                    console.log(`Journalctl exited with code ${code}`);
+                    controller.close();
+                });
+            }
         }
     });
 

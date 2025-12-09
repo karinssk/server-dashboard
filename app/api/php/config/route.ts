@@ -6,7 +6,67 @@ import { exec } from 'child_process';
 export const dynamic = 'force-dynamic';
 
 const readFile = util.promisify(fs.readFile);
+const writeFile = util.promisify(fs.writeFile);
 const execAsync = util.promisify(exec);
+
+export async function POST(request: Request) {
+    try {
+        const { version, config } = await request.json();
+
+        if (!version || !config) {
+            return NextResponse.json({ error: 'Missing version or config' }, { status: 400 });
+        }
+
+        let iniPath = '';
+        const isLinux = process.platform === 'linux';
+
+        if (isLinux) {
+            iniPath = `/etc/php/${version}/fpm/php.ini`;
+        } else {
+            // macOS dev fallback
+            const { stdout } = await execAsync(`php --ini | grep "Loaded Configuration File"`);
+            iniPath = stdout.split(':')[1].trim();
+        }
+
+        if (!fs.existsSync(iniPath)) {
+            return NextResponse.json({ error: `Config file not found at ${iniPath}` }, { status: 404 });
+        }
+
+        let content = await readFile(iniPath, 'utf-8');
+
+        // Update values
+        for (const [key, value] of Object.entries(config)) {
+            // Regex to match "key = value" or "key=value", preserving comments if possible but we target active lines
+            // We look for start of line or whitespace, key, optional whitespace, =, optional whitespace, value
+            const regex = new RegExp(`^\\s*${key}\\s*=\\s*.*$`, 'm');
+
+            if (regex.test(content)) {
+                content = content.replace(regex, `${key} = ${value}`);
+            } else {
+                // If key doesn't exist, append it (or maybe it's commented out?)
+                // For safety, let's just append to end if not found, or maybe we shouldn't touch it if not found to avoid breaking things?
+                // Let's assume we only edit existing keys for now.
+                console.warn(`Key ${key} not found in php.ini, skipping.`);
+            }
+        }
+
+        await writeFile(iniPath, content, 'utf-8');
+
+        // Restart Service
+        if (isLinux) {
+            await execAsync(`sudo systemctl restart php${version}-fpm`);
+        } else {
+            // macOS dev fallback
+            // await execAsync(`brew services restart php@${version}`); // Might fail if version format differs
+        }
+
+        return NextResponse.json({ success: true, message: 'Configuration updated and service restarted' });
+
+    } catch (error: any) {
+        console.error('PHP Config Update Error:', error);
+        return NextResponse.json({ error: error.message || 'Failed to update config' }, { status: 500 });
+    }
+}
 
 export async function GET(request: Request) {
     try {

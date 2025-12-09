@@ -1,0 +1,2 @@
+# Default Nginx Config
+server { listen 80; }

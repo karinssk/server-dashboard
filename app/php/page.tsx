@@ -42,7 +42,10 @@ interface PHPService {
 interface PHPConfig {
     path: string;
     config: Record<string, string>;
+    version: string;
 }
+
+import PHPLogViewer from '../components/PHPLogViewer';
 
 export default function PHPPage() {
     const { data: phpInfo, error: infoError } = useSWR<PHPInfo>('/api/php/info', fetcher);
@@ -51,6 +54,8 @@ export default function PHPPage() {
     const [loadingAction, setLoadingAction] = useState<string | null>(null);
     const [selectedConfig, setSelectedConfig] = useState<PHPConfig | null>(null);
     const [loadingConfig, setLoadingConfig] = useState(false);
+    const [savingConfig, setSavingConfig] = useState(false);
+    const [logViewerService, setLogViewerService] = useState<string | null>(null);
 
     const handleAction = async (service: string, action: 'start' | 'stop' | 'restart') => {
         setLoadingAction(`${service}-${action}`);
@@ -95,7 +100,7 @@ export default function PHPPage() {
             const res = await fetch(`/api/php/config?version=${version}`);
             if (!res.ok) throw new Error('Failed to fetch config');
             const data = await res.json();
-            setSelectedConfig(data);
+            setSelectedConfig({ ...data, version });
         } catch (error) {
             Toast.fire({
                 icon: 'error',
@@ -103,6 +108,40 @@ export default function PHPPage() {
             });
         } finally {
             setLoadingConfig(false);
+        }
+    };
+
+    const handleSaveConfig = async () => {
+        if (!selectedConfig) return;
+        setSavingConfig(true);
+        try {
+            const res = await fetch('/api/php/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    version: selectedConfig.version,
+                    config: selectedConfig.config
+                }),
+            });
+            const data = await res.json();
+
+            if (!res.ok) throw new Error(data.error || 'Failed');
+
+            Toast.fire({
+                icon: 'success',
+                title: 'Configuration saved and service restarted'
+            });
+            setSelectedConfig(null);
+            mutate('/api/php/services'); // Refresh status as it might be restarting
+        } catch (error: any) {
+            console.error('Save config failed:', error);
+            Toast.fire({
+                icon: 'error',
+                title: 'Failed to save configuration',
+                text: error.message
+            });
+        } finally {
+            setSavingConfig(false);
         }
     };
 
@@ -128,12 +167,20 @@ export default function PHPPage() {
                     <h2 className="text-xl font-bold text-white flex items-center gap-2">
                         <Server className="text-blue-400" /> PHP Services
                     </h2>
-                    <button
-                        onClick={handleRestartAll}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                    >
-                        <RotateCw size={16} /> Restart All
-                    </button>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => setLogViewerService('all')}
+                            className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                        >
+                            <Terminal size={16} /> View All Logs
+                        </button>
+                        <button
+                            onClick={handleRestartAll}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                        >
+                            <RotateCw size={16} /> Restart All
+                        </button>
+                    </div>
                 </div>
 
                 <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
@@ -163,6 +210,13 @@ export default function PHPPage() {
                                         </td>
                                         <td className="px-6 py-4 text-gray-400">{service.user || '-'}</td>
                                         <td className="px-6 py-4 text-right space-x-2 flex justify-end items-center">
+                                            <button
+                                                onClick={() => setLogViewerService(service.name)}
+                                                className="p-2 text-yellow-400 hover:bg-yellow-500/10 rounded-lg transition-colors mr-2"
+                                                title="View Logs"
+                                            >
+                                                <Terminal size={18} />
+                                            </button>
                                             <button
                                                 onClick={() => handleViewConfig(service.version)}
                                                 className="p-2 text-purple-400 hover:bg-purple-500/10 rounded-lg transition-colors mr-2"
@@ -336,18 +390,59 @@ export default function PHPPage() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {Object.entries(selectedConfig.config).map(([key, value]) => (
                                     <div key={key} className="bg-gray-950 p-4 rounded-lg border border-gray-800">
-                                        <span className="text-gray-500 text-xs uppercase tracking-wider block mb-1">
+                                        <label className="text-gray-500 text-xs uppercase tracking-wider block mb-1">
                                             {key.replace(/_/g, ' ')}
-                                        </span>
-                                        <span className="text-white font-mono font-medium">
-                                            {value}
-                                        </span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={value}
+                                            onChange={(e) => {
+                                                setSelectedConfig({
+                                                    ...selectedConfig,
+                                                    config: {
+                                                        ...selectedConfig.config,
+                                                        [key]: e.target.value
+                                                    }
+                                                });
+                                            }}
+                                            className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1 text-white font-mono text-sm focus:outline-none focus:border-purple-500 transition-colors"
+                                        />
                                     </div>
                                 ))}
                             </div>
                         </div>
+                        <div className="p-6 border-t border-gray-800 flex justify-end gap-3">
+                            <button
+                                onClick={() => setSelectedConfig(null)}
+                                className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+                                disabled={savingConfig}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSaveConfig}
+                                disabled={savingConfig}
+                                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2 disabled:opacity-50"
+                            >
+                                {savingConfig ? (
+                                    <>
+                                        <RotateCw size={16} className="animate-spin" /> Saving...
+                                    </>
+                                ) : (
+                                    'Save Changes'
+                                )}
+                            </button>
+                        </div>
                     </div>
                 </div>
+            )}
+
+            {/* Log Viewer Modal */}
+            {logViewerService && (
+                <PHPLogViewer
+                    service={logViewerService}
+                    onClose={() => setLogViewerService(null)}
+                />
             )}
         </div>
     );
