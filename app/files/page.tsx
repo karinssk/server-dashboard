@@ -240,37 +240,80 @@ export default function FilesPage() {
         const files = e.target.files;
         if (!files || files.length === 0) return;
 
+        const file = files[0];
         const formData = new FormData();
-        formData.append('file', files[0]);
+        formData.append('file', file);
         formData.append('path', currentPath);
 
-        try {
-            const res = await fetch('/api/files/upload', {
-                method: 'POST',
-                body: formData,
-            });
-            if (!res.ok) throw new Error('Failed to upload');
-            mutate(`/api/files/list?path=${encodeURIComponent(currentPath)}`);
-            Swal.fire({
-                icon: 'success',
-                title: 'Uploaded',
-                text: 'File uploaded successfully',
-                timer: 1500,
-                showConfirmButton: false,
-                background: '#1f2937',
-                color: '#fff'
-            });
-        } catch (error) {
+        // Show progress modal
+        let progressBar: HTMLElement | null = null;
+        let progressText: HTMLElement | null = null;
+
+        Swal.fire({
+            title: 'Uploading...',
+            html: `
+                <div class="w-full bg-gray-700 rounded-full h-4 mb-2 overflow-hidden">
+                    <div id="upload-progress-bar" class="bg-blue-500 h-4 rounded-full transition-all duration-200" style="width: 0%"></div>
+                </div>
+                <div id="upload-progress-text" class="text-sm text-gray-400">0%</div>
+            `,
+            showConfirmButton: false,
+            allowOutsideClick: false,
+            background: '#1f2937',
+            color: '#fff',
+            didOpen: () => {
+                progressBar = document.getElementById('upload-progress-bar');
+                progressText = document.getElementById('upload-progress-text');
+            }
+        });
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/files/upload', true);
+
+        xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+                const percentComplete = Math.round((event.loaded / event.total) * 100);
+                if (progressBar) progressBar.style.width = `${percentComplete}%`;
+                if (progressText) progressText.innerText = `${percentComplete}%`;
+            }
+        };
+
+        xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                mutate(`/api/files/list?path=${encodeURIComponent(currentPath)}`);
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Uploaded',
+                    text: 'File uploaded successfully',
+                    timer: 1500,
+                    showConfirmButton: false,
+                    background: '#1f2937',
+                    color: '#fff'
+                });
+            } else {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: 'Failed to upload file',
+                    background: '#1f2937',
+                    color: '#fff'
+                });
+            }
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        };
+
+        xhr.onerror = () => {
             Swal.fire({
                 icon: 'error',
                 title: 'Error',
-                text: 'Failed to upload file',
+                text: 'Network error during upload',
                 background: '#1f2937',
                 color: '#fff'
             });
-        } finally {
             if (fileInputRef.current) fileInputRef.current.value = '';
-        }
+        };
+
+        xhr.send(formData);
     };
 
     const handleDownload = (item: FileItem) => {
