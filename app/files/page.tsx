@@ -388,31 +388,115 @@ export default function FilesPage() {
 
         if (result.isConfirmed) {
             try {
-                const res = await fetch('/api/files/archive', {
+                // 1. Start Job
+                const startRes = await fetch('/api/files/archive', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        action: 'unzip',
+                        action: 'unzip-start',
                         targetPath: item.path,
                         destination: currentPath
                     }),
                 });
-                if (!res.ok) throw new Error('Failed to extract');
-                mutate(`/api/files/list?path=${encodeURIComponent(currentPath)}`);
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Extracted',
-                    text: 'Archive extracted successfully',
-                    timer: 1500,
+
+                if (!startRes.ok) throw new Error('Failed to start extraction');
+                const { jobId } = await startRes.json();
+
+                // 2. Show Progress Modal
+                let isCancelled = false;
+
+                await Swal.fire({
+                    title: 'Extracting...',
+                    html: `
+                        <div class="w-full bg-gray-700 rounded-full h-4 mb-2 overflow-hidden">
+                            <div id="extract-progress-bar" class="bg-green-500 h-4 rounded-full transition-all duration-200" style="width: 0%"></div>
+                        </div>
+                        <div class="flex justify-between text-sm text-gray-400">
+                            <span id="extract-progress-text">0%</span>
+                            <span id="extract-count-text">Starting...</span>
+                        </div>
+                    `,
+                    showCancelButton: true,
+                    cancelButtonText: 'Cancel',
+                    cancelButtonColor: '#d33',
                     showConfirmButton: false,
+                    allowOutsideClick: false,
                     background: '#1f2937',
-                    color: '#fff'
+                    color: '#fff',
+                    didOpen: () => {
+                        const progressBar = document.getElementById('extract-progress-bar');
+                        const progressText = document.getElementById('extract-progress-text');
+                        const countText = document.getElementById('extract-count-text');
+                        const cancelButton = Swal.getCancelButton();
+
+                        // Polling Loop
+                        const interval = setInterval(async () => {
+                            if (isCancelled) {
+                                clearInterval(interval);
+                                return;
+                            }
+
+                            try {
+                                const statusRes = await fetch('/api/files/archive', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ action: 'unzip-status', jobId }),
+                                });
+                                const statusData = await statusRes.json();
+
+                                if (statusData.status === 'done') {
+                                    clearInterval(interval);
+                                    Swal.fire({
+                                        icon: 'success',
+                                        title: 'Extracted',
+                                        text: `Successfully extracted ${statusData.extracted} files.`,
+                                        timer: 1500,
+                                        showConfirmButton: false,
+                                        background: '#1f2937',
+                                        color: '#fff'
+                                    });
+                                    mutate(`/api/files/list?path=${encodeURIComponent(currentPath)}`);
+                                } else if (statusData.status === 'cancelled') {
+                                    clearInterval(interval);
+                                    // Already handled by cancel button logic usually, but good safety
+                                } else {
+                                    // Update UI
+                                    if (progressBar) progressBar.style.width = `${statusData.progress}%`;
+                                    if (progressText) progressText.innerText = `${statusData.progress}%`;
+                                    if (countText) countText.innerText = `${statusData.extracted} / ${statusData.total}`;
+                                }
+                            } catch (e) {
+                                console.error('Polling error', e);
+                            }
+                        }, 1000);
+
+                        // Handle Cancel
+                        if (cancelButton) {
+                            cancelButton.onclick = async () => {
+                                isCancelled = true;
+                                clearInterval(interval);
+                                await fetch('/api/files/archive', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ action: 'unzip-cancel', jobId }),
+                                });
+                                Swal.fire({
+                                    title: 'Cancelled',
+                                    text: 'Extraction cancelled.',
+                                    icon: 'info',
+                                    background: '#1f2937',
+                                    color: '#fff'
+                                });
+                            };
+                        }
+                    }
                 });
+
             } catch (error) {
                 Swal.fire({
                     icon: 'error',
                     title: 'Error',
-                    text: 'Failed to extract archive',
+                    text: 'Failed to start extraction',
                     background: '#1f2937',
                     color: '#fff'
                 });
