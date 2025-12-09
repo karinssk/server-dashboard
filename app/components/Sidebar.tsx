@@ -1,9 +1,8 @@
-
 'use client';
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Server, Globe, Cloud, Code, Settings, LogOut, Folder } from 'lucide-react';
+import { LayoutDashboard, Server, Globe, Cloud, Code, Settings, LogOut, Folder, Clock } from 'lucide-react';
 
 const menuItems = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -12,6 +11,7 @@ const menuItems = [
     { name: 'Apache', href: '/apache', icon: Globe },
     { name: 'Cloudflared', href: '/cloudflared', icon: Cloud },
     { name: 'File Manager', href: '/files', icon: Folder },
+    { name: 'Cron Jobs', href: '/cron', icon: Clock },
 ];
 
 export default function Sidebar() {

@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const filePath = searchParams.get('path');
+    const isPreview = searchParams.get('preview') === 'true';
 
     if (!filePath) {
         return NextResponse.json({ error: 'Path is required' }, { status: 400 });
@@ -19,14 +20,41 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: 'Not a file' }, { status: 400 });
         }
 
+        // Determine Content-Type
+        const ext = path.extname(filePath).toLowerCase();
+        let contentType = 'application/octet-stream';
+
+        const mimeTypes: Record<string, string> = {
+            '.html': 'text/html',
+            '.css': 'text/css',
+            '.js': 'text/javascript',
+            '.json': 'application/json',
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.gif': 'image/gif',
+            '.svg': 'image/svg+xml',
+            '.webp': 'image/webp',
+            '.mp4': 'video/mp4',
+            '.webm': 'video/webm',
+            '.txt': 'text/plain',
+            '.pdf': 'application/pdf',
+        };
+
+        if (mimeTypes[ext]) {
+            contentType = mimeTypes[ext];
+        }
+
         // Create a readable stream
         const stream = createReadStream(filePath);
 
         // @ts-ignore - NextResponse supports streams but types might be strict
         return new NextResponse(stream, {
             headers: {
-                'Content-Disposition': `attachment; filename="${path.basename(filePath)}"`,
-                'Content-Type': 'application/octet-stream',
+                'Content-Disposition': isPreview
+                    ? 'inline'
+                    : `attachment; filename="${path.basename(filePath)}"`,
+                'Content-Type': contentType,
                 'Content-Length': stats.size.toString(),
             },
         });

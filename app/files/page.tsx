@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Folder, File, ArrowLeft, Home, RefreshCw, Plus, Trash2, Edit2, MoreVertical, FileText, FolderPlus, FilePlus, Upload, Download, Archive, PackageOpen } from 'lucide-react';
+import { Folder, File, ArrowLeft, Home, RefreshCw, Plus, Trash2, Edit2, MoreVertical, FileText, FolderPlus, FilePlus, Upload, Download, Archive, PackageOpen, X } from 'lucide-react';
 import useSWR, { mutate } from 'swr';
 import Swal from 'sweetalert2';
 import FileEditor from '../components/FileEditor';
@@ -43,6 +43,8 @@ export default function FilesPage() {
     const [editingFile, setEditingFile] = useState<string | null>(null);
     const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [previewFile, setPreviewFile] = useState<{ path: string; name: string; type: 'image' | 'video' } | null>(null);
+
 
     const { data, error, isLoading } = useSWR<ListResponse>(`/api/files/list?path=${encodeURIComponent(currentPath)}`, fetcher);
 
@@ -418,6 +420,19 @@ export default function FilesPage() {
         }
     };
 
+    const isImage = (name: string) => /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(name);
+    const isVideo = (name: string) => /\.(mp4|webm)$/i.test(name);
+
+    const handleFileClick = (item: FileItem) => {
+        if (isImage(item.name)) {
+            setPreviewFile({ path: item.path, name: item.name, type: 'image' });
+        } else if (isVideo(item.name)) {
+            setPreviewFile({ path: item.path, name: item.name, type: 'video' });
+        } else {
+            setEditingFile(item.path);
+        }
+    };
+
     return (
         <div className="flex h-screen overflow-hidden">
             {/* Left Sidebar - File Tree */}
@@ -592,7 +607,7 @@ export default function FilesPage() {
                                                         if (item.type === 'directory') {
                                                             handleNavigate(item.path);
                                                         } else {
-                                                            setEditingFile(item.path);
+                                                            handleFileClick(item);
                                                         }
                                                     }
                                                 }}
@@ -674,6 +689,45 @@ export default function FilesPage() {
                     onClose={() => setEditingFile(null)}
                     onSave={() => mutate(`/api/files/list?path=${encodeURIComponent(currentPath)}`)}
                 />
+            )}
+
+            {/* Media Preview Modal */}
+            {previewFile && (
+                <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setPreviewFile(null)}>
+                    <div className="relative max-w-5xl max-h-[90vh] w-full flex flex-col items-center justify-center" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            onClick={() => setPreviewFile(null)}
+                            className="absolute -top-12 right-0 text-gray-400 hover:text-white transition-colors"
+                        >
+                            <X size={32} />
+                        </button>
+
+                        {previewFile.type === 'image' ? (
+                            <img
+                                src={`/api/files/download?path=${encodeURIComponent(previewFile.path)}&preview=true`}
+                                alt={previewFile.name}
+                                className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl"
+                            />
+                        ) : (
+                            <video
+                                controls
+                                autoPlay
+                                className="max-w-full max-h-[80vh] rounded-lg shadow-2xl"
+                            >
+                                <source src={`/api/files/download?path=${encodeURIComponent(previewFile.path)}&preview=true`} type="video/mp4" />
+                                Your browser does not support the video tag.
+                            </video>
+                        )}
+                        <div className="mt-4 text-white font-medium text-lg">{previewFile.name}</div>
+                        <a
+                            href={`/api/files/download?path=${encodeURIComponent(previewFile.path)}`}
+                            download
+                            className="mt-2 text-blue-400 hover:text-blue-300 text-sm flex items-center gap-1"
+                        >
+                            <Download size={16} /> Download Original
+                        </a>
+                    </div>
+                </div>
             )}
         </div>
     );
