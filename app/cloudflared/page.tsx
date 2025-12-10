@@ -111,7 +111,20 @@ export default function CloudflaredPage() {
     const handleEditRule = (index: number, rule: IngressRule) => {
         setEditIndex(index);
         setEditHostname(rule.hostname || '');
-        setEditService(rule.service);
+
+        // Extract port from service if it matches http://localhost:PORT
+        const match = rule.service.match(/^http:\/\/localhost:(\d+)$/);
+        if (match) {
+            setEditService(match[1]);
+        } else {
+            // Fallback or handle other formats? 
+            // For now, let's just show the full string if it doesn't match, 
+            // but the input only accepts numbers so this might be tricky.
+            // Given the requirement "just allow user fill number of port only",
+            // we'll assume we only care about localhost ports.
+            // If it's something else, we might clear it or show 0.
+            setEditService('');
+        }
         setIsEditing(true);
     };
 
@@ -138,8 +151,21 @@ export default function CloudflaredPage() {
         if (!configData?.config) return;
 
         const newIngress = configData.config.ingress ? [...configData.config.ingress] : [];
-        const newRule: IngressRule = { service: editService };
-        if (editHostname) newRule.hostname = editHostname;
+
+        // Construct service URL from port
+        const serviceUrl = `http://localhost:${editService}`;
+
+        // Ensure hostname is first key
+        const newRule: IngressRule = {
+            hostname: editHostname,
+            service: serviceUrl
+        };
+
+        // If it's a catch-all or special rule without hostname, we might want to handle it differently
+        // But for this specific requirement, we are enforcing hostname input for domains.
+        if (!editHostname) {
+            delete newRule.hostname;
+        }
 
         if (editIndex === -1) {
             // Add new rule before the last catch-all rule (usually service: http_status:404)
@@ -338,23 +364,52 @@ export default function CloudflaredPage() {
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-400 mb-1">Hostname</label>
-                                <input
-                                    type="text"
-                                    value={editHostname}
-                                    onChange={(e) => setEditHostname(e.target.value)}
-                                    placeholder="e.g. app.example.com"
-                                    className="w-full bg-gray-950 border border-gray-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-orange-500"
-                                />
+                                <div className="relative flex items-center">
+                                    <span className="absolute left-3 text-gray-500 select-none">https://</span>
+                                    <input
+                                        type="text"
+                                        value={editHostname}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (val.includes('http://') || val.includes('https://') || val.includes('/')) {
+                                                Swal.fire({
+                                                    icon: 'warning',
+                                                    title: 'Invalid Format',
+                                                    text: 'Please remove "https://" and enter only the domain (e.g., test.rubyshop.co.th)',
+                                                    toast: true,
+                                                    position: 'top-end',
+                                                    showConfirmButton: false,
+                                                    timer: 3000
+                                                });
+                                                return;
+                                            }
+                                            setEditHostname(val);
+                                        }}
+                                        placeholder="test.rubyshop.co.th"
+                                        className="w-full bg-gray-950 border border-gray-800 rounded-lg pl-[4.5rem] pr-4 py-2 text-white focus:outline-none focus:border-orange-500"
+                                    />
+                                </div>
+                                <p className="text-xs text-gray-600 mt-1">Enter domain only, without protocol or path.</p>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-400 mb-1">Service</label>
-                                <input
-                                    type="text"
-                                    value={editService}
-                                    onChange={(e) => setEditService(e.target.value)}
-                                    placeholder="e.g. http://localhost:3000"
-                                    className="w-full bg-gray-950 border border-gray-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-orange-500"
-                                />
+                                <label className="block text-sm font-medium text-gray-400 mb-1">Service Port</label>
+                                <div className="relative flex items-center">
+                                    <span className="absolute left-3 text-gray-500 select-none">http://localhost:</span>
+                                    <input
+                                        type="text"
+                                        value={editService}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            // Allow only numbers
+                                            if (/^\d*$/.test(val)) {
+                                                setEditService(val);
+                                            }
+                                        }}
+                                        placeholder="3000"
+                                        className="w-full bg-gray-950 border border-gray-800 rounded-lg pl-[8.5rem] pr-4 py-2 text-white focus:outline-none focus:border-orange-500"
+                                    />
+                                </div>
+                                <p className="text-xs text-gray-600 mt-1">Enter the local port number only.</p>
                             </div>
                         </div>
 

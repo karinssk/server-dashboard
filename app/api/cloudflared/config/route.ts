@@ -74,7 +74,17 @@ export async function POST(request: Request) {
         }
 
         // 3. Save the new config first
-        const yamlStr = yaml.dump(config);
+        const yamlStr = yaml.dump(config, {
+            sortKeys: (a, b) => {
+                // Ensure hostname comes first
+                if (a === 'hostname') return -1;
+                if (b === 'hostname') return 1;
+                // Ensure service comes after hostname but before others if needed
+                if (a === 'service') return 1;
+                if (b === 'service') return -1;
+                return a.localeCompare(b);
+            }
+        });
         await writeFile(CONFIG_PATH, yamlStr, 'utf-8');
 
         // 4. Execute DNS routing for new hostnames

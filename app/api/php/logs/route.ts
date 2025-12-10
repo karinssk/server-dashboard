@@ -64,7 +64,7 @@ export async function GET(request: Request) {
                 const interval = setInterval(() => {
                     sendLog({
                         timestamp: Date.now(),
-                        message: `[Mock] PHP Log entry for ${service || 'all'} - ${new Date().toISOString()}`,
+                        message: `[Mock_dev_mode ] when using local pc or mac os PHP Log entry for ${service || 'all'} - ${new Date().toISOString()}`,
                         service: service || 'php-fpm',
                         priority: '6'
                     });
