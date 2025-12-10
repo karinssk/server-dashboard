@@ -259,7 +259,9 @@ export default function CloudflaredPage() {
                         <div>
                             <h3 className="text-sm font-medium text-gray-400">Current Tunnel</h3>
                             <p className="text-xl font-bold text-white truncate" title={configData?.config.tunnel}>
-                                {configData?.config.tunnel || 'Not Configured'}
+                                {configData?.config.tunnel
+                                    ? `${configData.config.tunnel.slice(0, 6)}${configData.config.tunnel.length > 6 ? '****' : ''}`
+                                    : 'Not Configured'}
                             </p>
                         </div>
                     </div>
